@@ -2,7 +2,9 @@ import os
 from pathlib import Path
 
 import torchvision, torch
-from torchvision import datasets, models, transforms
+from torchvision import datasets, transforms
+from torchvision.datasets import ImageFolder
+from torch.utils.data import DataLoader
 import cv2
 
 import pandas as pd
@@ -46,10 +48,11 @@ for i in range(NUM_CATEGORIES):
     plt.xticks([])
     plt.yticks([])
     sign = list(train_path.glob(f'{i}/*'))[0]
-   # plt.imshow(sign)
+    img = Image.open(sign)
+    plt.imshow(img)
 plt.show()
 
-# 어떤 표지판의 이미지가 많은지 시각화
+# # 어떤 표지판의 이미지가 많은지 시각화
 folders = os.listdir('./archive/Train')
 
 train_num = []
@@ -66,10 +69,30 @@ sorted_pairs = sorted(zipped_lists)
 tuples =  zip(*sorted_pairs) # sorted(정렬할 데이터), 새로운 정렬된 리스트로 만들어서 반환
 train_num, class_num = [ list(tuple) for tuple in tuples]
 
-# 시각화
+# # 시각화
 plt.figure(figsize = (21, 10))
 plt.bar(class_num, train_num)
 plt.xticks(class_num, rotation='vertical')
 plt.show()
 
-# 모델링
+# dataset 정의
+# for i in range(NUM_CATEGORIES):
+#   sign = list(train_path.glob(f'{i}/*'))[0]
+
+# image_forlder = datasets.ImageFolder(root=sign,
+#                                      transform=transforms.Compose([
+#                                      transforms.ToTensor()
+#                                      ])
+#                                     )
+
+# train_loader = torch.utils.data.DataLoader(image_forlder,
+#                                            batch_size=50,
+#                                            shuffle=True,
+#                                            num_workers=8)
+
+# test_loader = torch.utils.data.DataLoader(test_path,
+#                                           batch_size=50,
+#                                           shuffle=False,
+#                                           num_workers=8)
+
+# images, labels = next(iter(train_loader))
