@@ -52,15 +52,15 @@ NUM_CATEGORIES = len(os.listdir(train_path))
 # plt.show()
 
 # # 어떤 표지판의 이미지가 많은지 시각화
-# folders = os.listdir('./archive/Train')
+folders = os.listdir('./archive/Train')
 
-# train_num = []
-# class_num = []
+train_num = []
+class_num = []
 
-# for folder in folders:
-#   train_files = os.listdir(str(train_path) + '/'+ folder) #리스트로 가져오면 에러떠서 str로 변환
-#   train_num.append(len(train_files))
-#   class_num.append(classes[int(folder)])
+for folder in folders:
+    train_files = os.listdir(str(train_path) + '/'+ folder) #리스트로 가져오면 에러떠서 str로 변환
+    train_num.append(len(train_files))
+    class_num.append(classes[int(folder)])
 
 # # 각각의 클래스의 이미지의 수에 기초해 데이터셋 분류하기
 # zipped_lists =  zip(train_num, class_num)
@@ -75,18 +75,52 @@ NUM_CATEGORIES = len(os.listdir(train_path))
 # plt.show()
 
 # dataset 정의
-image_forlder = datasets.ImageFolder(root='./archive/Train',
+train_img = datasets.ImageFolder(root='./archive/Train',
                                      transform=transforms.Compose([
                                      transforms.ToTensor()
                                      ])
                                     )
 
-train_loader = torch.utils.data.DataLoader(image_forlder,
+test_img = datasets.ImageFolder(root='./archive/Test',
+                                    transform=transforms.Compose([
+                                    transforms.ToTensor()
+                                    ])
+                                    )
+
+train_loader = torch.utils.data.DataLoader(train_img,
                                            batch_size=50,
                                            shuffle=True,
                                            num_workers=8)
 
-test_loader = torch.utils.data.DataLoader(test_path,
+test_loader = torch.utils.data.DataLoader(test_img,
                                           batch_size=50,
                                           shuffle=False,
                                           num_workers=8)
+
+#cnn 모델 설계
+class CNN(torch.nn.Module):
+
+    def __init__(self):
+        super(CNN,self).__init__()
+        
+        #첫 번쨰 층
+        self.layer1 = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 32, kernel_size=3, input_shape=(img_height,img_width,3)),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=2, stride=2),
+            torch.nn.Dropout2d(0.25)    
+            )
+        
+        #두 번째 층
+        self.layer2 = torch.nn.Sequential(
+            torch.nn.Conv2d(32, 64, kernel_size=3),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=2, stride=2),
+            torch.nn.Dropout2d(0.25)
+            )
+        
+        #세 번째 층
+        self.layer3 = torch.nn.Sequential(
+            torch.nn.Conv2d(64, Kernel_size=3),
+            torch.nn.ReLU()
+        )
