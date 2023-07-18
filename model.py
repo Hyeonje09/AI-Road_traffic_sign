@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 
 from cls import classes
 
+import multiprocessing
+
 #cuda gpu 사용
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -75,18 +77,20 @@ for folder in folders:
 # plt.show()
 
 learning_rate = 0.001
-batch_size = 100
+batch_size = 64
 training_epochs = 15
 
 # dataset 정의
 train_img = datasets.ImageFolder(root='./archive/Train',
                                      transform=transforms.Compose([
+                                     transforms.Resize((img_height, img_width)),
                                      transforms.ToTensor()
                                      ])
                                     )
 
 test_img = datasets.ImageFolder(root='./archive/Test',
                                     transform=transforms.Compose([
+                                    transforms.Resize((img_height, img_width)),                                    
                                     transforms.ToTensor()
                                     ])
                                     )
@@ -103,45 +107,48 @@ test_loader = torch.utils.data.DataLoader(test_img,
 
 #cnn 모델 설계
 class CNN(torch.nn.Module):
-
     def __init__(self):
-        super(CNN,self).__init__()
+        super(CNN, self).__init__()
         self.keep_prob = 0.5
 
-        #첫 번쨰 층
+        # 첫 번째 층
         self.layer1 = torch.nn.Sequential(
             torch.nn.Conv2d(3, 32, kernel_size=3),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            torch.nn.Dropout2d(0.25)    
-            )
-        
-        #두 번째 층
+            torch.nn.Dropout2d(0.25)
+        )
+
+        # 두 번째 층
         self.layer2 = torch.nn.Sequential(
             torch.nn.Conv2d(32, 64, kernel_size=3),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(kernel_size=2, stride=2),
             torch.nn.Dropout2d(0.25)
-            )
-        
-        #세 번째 층
-        # self.layer3 = torch.nn.Sequential(
-        #     torch.nn.Conv2d(64, 128, Kernel_size=3),
-        #     torch.nn.ReLU()
-        # )
-        # TypeError: Conv2d.__init__() got an unexpected keyword argument 'Kernel_size' 오류..?
+        )
 
-        self.fc1 = torch.nn.Linear(4 * 4 * 128, 625)
-        self.fc2 = torch.nn.Linear(625, 10)
-        
-    #전결합층(Fully-Connteced Layer)
+        # 세 번째 층
+        self.layer3 = torch.nn.Sequential(
+            torch.nn.Conv2d(64, 128, kernel_size=3),
+            torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=2, stride=2),  # 출력 크기 수정
+            torch.nn.Dropout2d(0.25)
+        )
+
+        self.fc1 = torch.nn.Linear(3 * 3 * 128, 625)
+        self.fc2 = torch.nn.Linear(625, 43)
+
+    # 전결합층(Fully-Connteced Layer)
     def forward(self, x):
         out = self.layer1(x)
         out = self.layer2(out)
-        #out = self.layer3(out)
+        out = self.layer3(out)
         out = out.view(out.size(0), -1)
+        out = self.fc1(out)
         out = self.fc2(out)
         return out
+
+
 
 model = CNN().to(device)
 
@@ -151,7 +158,9 @@ optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
 total_batch = len(train_loader)
 print('총 배치의 수 : {}'.format(total_batch))
 
-def train():
+if __name__ == '__main__':
+    multiprocessing.freeze_support()
+
     for epoch in range(training_epochs):
         avg_cost = 0
 
@@ -168,6 +177,3 @@ def train():
             avg_cost += cost / total_batch
         
         print('[Epoch :  {:>4}] cost = {:>.9}'.format(epoch+1, avg_cost))
-
-if __name__ == '__main__':
-    train()
