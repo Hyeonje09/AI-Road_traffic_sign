@@ -1,179 +1,122 @@
 import os
 from pathlib import Path
 
-import torchvision, torch
+import torch
+from torch import nn, optim
 from torchvision import datasets, transforms
-from torchvision.datasets import ImageFolder
-from torch.utils.data import DataLoader
-import cv2
-
-import pandas as pd
-import numpy as np
-
-from PIL import Image
-import matplotlib.pyplot as plt
-
-from cls import classes
-
 import multiprocessing
 
-#cuda gpu 사용
+# CUDA GPU 사용
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-#랜덤 시드 고정
+# 랜덤 시드 고정
 torch.manual_seed(777)
 
 # GPU 사용 가능일 경우 랜덤 시드 고정
 if device == 'cuda':
     torch.cuda.manual_seed_all(777)
-    
+
 # 파일 경로 지정
-# https://www.kaggle.com/datasets/meowmeowmeowmeowmeow/gtsrb-german-traffic-sign 데이터 사용
-data_dir = Path("./archive/Meta")
 train_path = Path("./archive/Train")
 test_path = Path("./archive/Test")
 
 # 이미지 전처리
 img_height = 30
 img_width = 30
-channels = 3   
 
-# 카테고리 수 확인
-NUM_CATEGORIES = len(os.listdir(train_path))
+# 데이터셋 로드
+train_transform = transforms.Compose([
+    transforms.Resize((img_height, img_width)),
+    transforms.ToTensor()
+])
 
-# plt.figure(figsize=(14,14))
+test_transform = transforms.Compose([
+    transforms.Resize((img_height, img_width)),
+    transforms.ToTensor()
+])
 
-# for i in range(NUM_CATEGORIES):
-#     plt.subplot(7, 7, i+1)
-#     plt.grid(False)
-#     plt.xticks([])
-#     plt.yticks([])
-#     sign = list(train_path.glob(f'{i}/*'))[0]
-#     img = Image.open(sign)
-#     plt.imshow(img)
-# plt.show()
+train_dataset = datasets.ImageFolder(root=train_path, transform=train_transform)
+test_dataset = datasets.ImageFolder(root=test_path, transform=test_transform)
 
-# # 어떤 표지판의 이미지가 많은지 시각화
-folders = os.listdir('./archive/Train')
-
-train_num = []
-class_num = []
-
-for folder in folders:
-    train_files = os.listdir(str(train_path) + '/'+ folder) #리스트로 가져오면 에러떠서 str로 변환
-    train_num.append(len(train_files))
-    class_num.append(classes[int(folder)])
-
-# # 각각의 클래스의 이미지의 수에 기초해 데이터셋 분류하기
-# zipped_lists =  zip(train_num, class_num)
-# sorted_pairs = sorted(zipped_lists)
-# tuples =  zip(*sorted_pairs) # sorted(정렬할 데이터), 새로운 정렬된 리스트로 만들어서 반환
-# train_num, class_num = [ list(tuple) for tuple in tuples]
-
-# # 시각화
-# plt.figure(figsize = (21, 10))
-# plt.bar(class_num, train_num)
-# plt.xticks(class_num, rotation='vertical')
-# plt.show()
-
-learning_rate = 0.001
 batch_size = 64
-training_epochs = 15
 
-# dataset 정의
-train_img = datasets.ImageFolder(root='./archive/Train',
-                                     transform=transforms.Compose([
-                                     transforms.Resize((img_height, img_width)),
-                                     transforms.ToTensor()
-                                     ])
-                                    )
-
-test_img = datasets.ImageFolder(root='./archive/Test',
-                                    transform=transforms.Compose([
-                                    transforms.Resize((img_height, img_width)),                                    
-                                    transforms.ToTensor()
-                                    ])
-                                    )
-
-train_loader = torch.utils.data.DataLoader(train_img,
+train_loader = torch.utils.data.DataLoader(train_dataset,
                                            batch_size=batch_size,
                                            shuffle=True,
                                            num_workers=8)
 
-test_loader = torch.utils.data.DataLoader(test_img,
+test_loader = torch.utils.data.DataLoader(test_dataset,
                                           batch_size=batch_size,
                                           shuffle=False,
                                           num_workers=8)
 
-#cnn 모델 설계
-class CNN(torch.nn.Module):
+# CNN 모델 설계
+class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
-        self.keep_prob = 0.5
-
-        # 첫 번째 층
-        self.layer1 = torch.nn.Sequential(
-            torch.nn.Conv2d(3, 32, kernel_size=3),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            torch.nn.Dropout2d(0.25)
+        
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Dropout2d(0.25)
+        )
+        
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Dropout2d(0.25)
         )
 
-        # 두 번째 층
-        self.layer2 = torch.nn.Sequential(
-            torch.nn.Conv2d(32, 64, kernel_size=3),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            torch.nn.Dropout2d(0.25)
-        )
+        self.fc1 = nn.Linear(6 * 6 * 64, 256)
+        self.fc2 = nn.Linear(256, 43)
 
-        # 세 번째 층
-        self.layer3 = torch.nn.Sequential(
-            torch.nn.Conv2d(64, 128, kernel_size=3),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool2d(kernel_size=2, stride=2),  # 출력 크기 수정
-            torch.nn.Dropout2d(0.25)
-        )
-
-        self.fc1 = torch.nn.Linear(3 * 3 * 128, 625)
-        self.fc2 = torch.nn.Linear(625, 43)
-
-    # 전결합층(Fully-Connteced Layer)
     def forward(self, x):
         out = self.layer1(x)
         out = self.layer2(out)
-        out = self.layer3(out)
         out = out.view(out.size(0), -1)
         out = self.fc1(out)
         out = self.fc2(out)
         return out
 
+def train(model, criterion, optimizer, train_loader):
+    model.train()  # 모델을 학습 모드로 설정
+    running_loss = 0.0
 
+    for i, (images, labels) in enumerate(train_loader):
+        images = images.to(device)
+        labels = labels.to(device)
 
-model = CNN().to(device)
+        optimizer.zero_grad()
 
-criterion = torch.nn.CrossEntropyLoss().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr = learning_rate)
+        outputs = model(images)
+        loss = criterion(outputs, labels)
 
-total_batch = len(train_loader)
-print('총 배치의 수 : {}'.format(total_batch))
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+
+        if (i + 1) % 10 == 0:
+            print(f'Step [{i + 1}/{len(train_loader)}], Loss: {running_loss / 10:.4f}')
+            running_loss = 0.0
 
 if __name__ == '__main__':
+    # CNN 모델 초기화
+    model = CNN().to(device)
+
+    # 손실 함수와 옵티마이저 정의
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    # 학습 설정
+    num_epochs = 15
+
     multiprocessing.freeze_support()
 
-    for epoch in range(training_epochs):
-        avg_cost = 0
+    for epoch in range(num_epochs):
+        print(f'Epoch [{epoch + 1}/{num_epochs}]')
+        train(model, criterion, optimizer, train_loader)
 
-        for X, Y in train_loader:
-            X = X.to(device)
-            Y = Y.to(device)
-
-            optimizer.zero_grad()
-            hypothesis = model(X)
-            cost = criterion(hypothesis, Y)
-            cost.backward()
-            optimizer.step()
-
-            avg_cost += cost / total_batch
-        
-        print('[Epoch :  {:>4}] cost = {:>.9}'.format(epoch+1, avg_cost))
+    print('학습 완료')
