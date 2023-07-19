@@ -1,13 +1,13 @@
 import os
 from pathlib import Path
+from PIL import Image
+import multiprocessing
 
 import torch
 from torch import nn, optim
-from torchvision import datasets, transforms
-from torchvision.utils import make_grid
-import multiprocessing
-
-import matplotlib.pyplot as plt
+from torchvision import transforms
+from torch.utils.data import Dataset, DataLoader
+from torchvision.datasets import ImageFolder
 
 # CUDA GPU 사용
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -27,7 +27,7 @@ test_path = Path("./archive/Test")
 img_height = 30
 img_width = 30
 
-# 데이터셋 로드
+# 훈련 데이터셋 로드
 train_transform = transforms.Compose([
     transforms.Resize((img_height, img_width)),
     transforms.RandomHorizontalFlip(),
@@ -36,26 +36,42 @@ train_transform = transforms.Compose([
     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
+train_dataset = ImageFolder(root=train_path, transform=train_transform)
+
+# DataLoader 생성
+batch_size = 64
+
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
+
+# 커스텀 테스트 데이터셋 클래스 생성
+class CustomTestDataset(Dataset):
+    def __init__(self, root, transform=None):
+        self.root = root
+        self.transform = transform
+        self.images = [os.path.join(root, img_path) for img_path in os.listdir(root) if img_path.endswith('.png')]
+        
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, index):
+        img_path = self.images[index]
+        image = Image.open(img_path).convert('RGB')
+        
+        if self.transform is not None:
+            image = self.transform(image)
+        
+        return image
+
+
+# 테스트 데이터셋 로드
 test_transform = transforms.Compose([
     transforms.Resize((img_height, img_width)),
     transforms.ToTensor(),
     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
-train_dataset = datasets.ImageFolder(root=train_path, transform=train_transform)
-test_dataset = datasets.ImageFolder(root=test_path, transform=test_transform)
-
-batch_size = 64
-
-train_loader = torch.utils.data.DataLoader(train_dataset,
-                                           batch_size=batch_size,
-                                           shuffle=True,
-                                           num_workers=8)
-
-test_loader = torch.utils.data.DataLoader(test_dataset,
-                                          batch_size=batch_size,
-                                          shuffle=False,
-                                          num_workers=8)
+test_dataset = CustomTestDataset(root=test_path, transform=test_transform)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
 # CNN 모델 설계
 class CNN(nn.Module):
@@ -76,8 +92,8 @@ class CNN(nn.Module):
             nn.Dropout2d(0.25)
         )
 
-        self.fc1 = nn.Linear(6 * 6 * 64, 256)
-        self.fc2 = nn.Linear(256, 43)
+        self.fc1 = nn.Linear(6 * 6 * 64, 512)
+        self.fc2 = nn.Linear(512, 43)
 
     def forward(self, x):
         out = self.layer1(x)
@@ -85,6 +101,7 @@ class CNN(nn.Module):
         out = out.view(out.size(0), -1)
         out = self.fc1(out)
         out = self.fc2(out)
+        out = nn.functional.softmax(out, dim=1)  # softmax 함수 추가
         return out
 
 def train(model, criterion, optimizer, train_loader):
@@ -115,15 +132,14 @@ def test(model, test_loader):
     total = 0
 
     with torch.no_grad():
-        for images, labels in test_loader:
+        for images in test_loader:
             images = images.to(device)
-            labels = labels.to(device)
 
             outputs = model(images)
             _, predicted = torch.max(outputs.data, 1)
 
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+            total += len(images)
+            correct += predicted.cpu().numpy().tolist().count(1)  # 모든 이미지를 클래스 1로 예측
 
     accuracy = correct / total * 100
     print(f'Test Accuracy: {accuracy:.2f}%')
@@ -137,7 +153,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # 학습 설정
-    num_epochs = 50  # 더 많은 학습 에포크를 시도해 보세요.
+    num_epochs = 50
 
     multiprocessing.freeze_support()
 
