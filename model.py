@@ -4,7 +4,10 @@ from pathlib import Path
 import torch
 from torch import nn, optim
 from torchvision import datasets, transforms
+from torchvision.utils import make_grid
 import multiprocessing
+
+import matplotlib.pyplot as plt
 
 # CUDA GPU 사용
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -27,12 +30,16 @@ img_width = 30
 # 데이터셋 로드
 train_transform = transforms.Compose([
     transforms.Resize((img_height, img_width)),
-    transforms.ToTensor()
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(20),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
 test_transform = transforms.Compose([
     transforms.Resize((img_height, img_width)),
-    transforms.ToTensor()
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
 train_dataset = datasets.ImageFolder(root=train_path, transform=train_transform)
@@ -102,6 +109,25 @@ def train(model, criterion, optimizer, train_loader):
             print(f'Step [{i + 1}/{len(train_loader)}], Loss: {running_loss / 10:.4f}')
             running_loss = 0.0
 
+def test(model, test_loader):
+    model.eval()  # 모델을 평가 모드로 설정
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images = images.to(device)
+            labels = labels.to(device)
+
+            outputs = model(images)
+            _, predicted = torch.max(outputs.data, 1)
+
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    accuracy = correct / total * 100
+    print(f'Test Accuracy: {accuracy:.2f}%')
+
 if __name__ == '__main__':
     # CNN 모델 초기화
     model = CNN().to(device)
@@ -111,12 +137,13 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # 학습 설정
-    num_epochs = 15
+    num_epochs = 50  # 더 많은 학습 에포크를 시도해 보세요.
 
     multiprocessing.freeze_support()
 
     for epoch in range(num_epochs):
-        print(f'Epoch [{epoch + 1}/{num_epochs}]')
+        print(f'Epoch [{epoch+1}/{num_epochs}]')
         train(model, criterion, optimizer, train_loader)
+        test(model, test_loader)
 
     print('학습 완료')
